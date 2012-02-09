@@ -1,104 +1,58 @@
-include_recipe "git"
+#
+# Cookbook Name:: rvm
+# Recipe:: default
 
-%w(
-  build-essential
-  bison
-  openssl
-  libreadline6
-  libreadline6-dev
-  curl
-  zlib1g
-  zlib1g-dev
-  libssl-dev
-  vim
-  libsqlite3-0
-  libsqlite3-dev
-  sqlite3
-  libxml2-dev
-  subversion
-  autoconf
-).each do |pkg_name|
-  package pkg_name do
-    action :install
-  end
+# Make sure that the package list is up to date on Ubuntu/Debian.
+include_recipe "apt" if [ 'debian', 'ubuntu' ].member? node[:platform]
+
+# Make sure we have all we need to compile ruby implementations:
+package "curl"
+package "git-core"
+include_recipe "build-essential"
+ 
+%w(libreadline-dev zlib1g-dev libssl-dev libxml2-dev libxslt1-dev libtool).each do |pkg|
+  package pkg
 end
 
-cookbook_file "/etc/gemrc" do
-  source "gemrc"
-  owner "root"
-  group "root"
-  mode "0755"
+# clean up rvm stuff
+# This is mostly to save inode space
+execute "rvm-cleanup" do
+  user "root"
+  command "/usr/local/rvm/bin/rvm cleanup sources"
+  action :nothing
 end
-
-remote_file "/usr/local/src/rvm-install-system-wide" do
-  source "https://raw.github.com/wayneeseguin/rvm/master/binscripts/rvm-installer"
-  mode "0755"
-  action :create_if_missing
-end
-
-execute "install rvm" do
-  command "/usr/local/src/rvm-install-system-wide"
+ 
+bash "installing system-wide RVM stable" do
+  user "root"
+  code "bash -s stable < <(curl -s https://raw.github.com/wayneeseguin/rvm/master/binscripts/rvm-installer)"
   not_if "test -e /usr/local/rvm/bin/rvm"
 end
 
-cookbook_file "/etc/profile.d/rvm_profile.sh" do
-  source "rvm_profile.sh"
+bash "upgrading to RVM head" do
+  user "root"
+  code "/usr/local/rvm/bin/rvm update --head ; /usr/local/rvm/bin/rvm reload"
+  only_if { node[:rvm][:version] == :head }
+  only_if { node[:rvm][:track_updates] }
+end
+
+bash "upgrading RVM stable" do
+  user "root"
+  code "/usr/local/rvm/bin/rvm update ; /usr/local/rvm/bin/rvm reload"
+  only_if { node[:rvm][:track_updates] }
+end
+
+#cookbook_file "/etc/profile.d/rvm.sh" do
+#  owner "root"
+#  group "root"
+#  mode 0755
+#end
+
+cookbook_file "/usr/local/rvm/bin/rvm-gem.sh" do
   owner "root"
   group "root"
-  mode "0755"
+  mode 0755
 end
 
-rubies = node[:rvm][:rubies].split(" ")
-default_ruby = node[:rvm][:default_ruby] || rubies.first
+# set this for compatibilty with other people's recipes
+node.default[:languages][:ruby][:ruby_bin] = find_ruby
 
-rubies.each do |ruby|
-  bash "rvm install #{ruby}" do
-    code "rvm install #{ruby}"
-    not_if "test -e /usr/local/rvm/rubies/#{ruby}*"
-  end
-  
-end
-execute "set default ruby" do
-  command "rvm alias create default #{default_ruby}"
-end
-
-bash "rvm #{default_ruby} --default" do
-  code "rvm #{default_ruby} --default"
-  not_if "test -e /usr/local/rvm/rubies/default"
-end
-
-ruby_block "set full env" do
-  block do
-    Chef::Mixin::Command.popen4(%Q{bash -l -c "env"}) do |p,i,o,e|
-      o.each_line do |line|
-        env_bits = line.split("=")
-        k = env_bits[0].to_s.strip
-        v = env_bits[1].to_s.strip
-        unless k == "" || k =~ /\s/
-          ENV[k] = v
-        end
-      end
-    end
-  end
-end
-
-#Reinstall chef
-rvm_gem "chef" do
-  action :install
-  #version node[:rails_stable][:version]
-end
-
-
-=begin
-
-Uninstall:
-
-{
-rm -rf /usr/local/src/rvm-install-system-wide
-rm -rf /usr/local/bin/rvm
-rm -rf /etc/profile.d/rvm_profile.sh
-rm -rf /usr/local/rvm
-find /usr/local/bin -type l 2>/dev/null | xargs file | grep 'broken symbolic link' | cut -f 1 -d ":" | xargs -n 1 rm
-}
-
-=end
