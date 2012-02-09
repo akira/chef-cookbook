@@ -27,7 +27,7 @@ include_recipe "passenger_apache2"
 
 template "#{node[:apache][:dir]}/mods-available/passenger.conf" do
   cookbook "passenger_apache2"
-  source "passenger.conf.erb"
+  source "passenger-detailed.conf.erb"
   owner "root"
   group "root"
   mode "644"
