@@ -1,6 +1,6 @@
 include_recipe "rvm"
 
-rvm_gem "rails" do
-  action :install
+gem_package 'rails' do
+  gem_binary "gem"
   version node[:rails_stable][:version]
 end
